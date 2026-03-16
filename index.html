@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飞书→钉钉文档迁移工具</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 飞书→钉钉文档迁移工具</h1>
+            <p class="subtitle">一键迁移飞书文档到钉钉文档系统</p>
+        </header>
+
+        <!-- 配置区域 -->
+        <section id="config-section" class="card">
+            <h2>⚙️ API 配置</h2>
+            <div class="config-grid">
+                <div class="config-column">
+                    <h3>飞书凭证
+                        <small style="font-weight: normal; color: #666; margin-left: 10px;">
+                            <a href="https://open.feishu.cn/" target="_blank" style="color: #1890ff;">前往飞书开放平台 →</a>
+                        </small>
+                    </h3>
+                    <div class="form-group">
+                        <label for="feishu-app-id">App ID</label>
+                        <input type="text" id="feishu-app-id" placeholder="cli_xxxxxxxxxxxxx">
+                        <small class="hint">💡 获取路径：飞书开放平台 → 我的应用 → 凭证与基础信息</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="feishu-app-secret">App Secret</label>
+                        <input type="password" id="feishu-app-secret" placeholder="应用密钥">
+                        <small class="hint">💡 同上页面，点击「查看」获取</small>
+                    </div>
+                    <div class="hint-box">
+                        <strong>📋 需要开通的权限：</strong>
+                        <ul>
+                            <li>查看新版文档</li>
+                            <li>查看知识库</li>
+                            <li>下载云文档中的图片和附件</li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-primary" onclick="testFeishuAuth()">测试连接</button>
+                </div>
+                
+                <div class="config-column">
+                    <h3>钉钉凭证
+                        <small style="font-weight: normal; color: #666; margin-left: 10px;">
+                            <a href="https://open.dingtalk.com/" target="_blank" style="color: #1890ff;">前往钉钉开放平台 →</a>
+                        </small>
+                    </h3>
+                    <div class="form-group">
+                        <label for="dingtalk-client-id">Client ID</label>
+                        <input type="text" id="dingtalk-client-id" placeholder="dingxxxxxxxxxxxxxxx">
+                        <small class="hint">💡 获取路径：钉钉开放平台 → 应用开发 → 企业内部开发 → 凭证与基础信息</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="dingtalk-client-secret">Client Secret</label>
+                        <input type="password" id="dingtalk-client-secret" placeholder="应用密钥">
+                        <small class="hint">💡 同上页面，ClientSecret 需要点击查看</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="dingtalk-corp-id">Corp ID（企业ID）</label>
+                        <input type="text" id="dingtalk-corp-id" placeholder="dingxxxxxxxxxxxxxxx">
+                        <small class="hint">💡 获取路径：钉钉开放平台 → 首页 → 组织信息 → CorpId</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="dingtalk-user-id">操作用户 unionId（必填）</label>
+                        <input type="text" id="dingtalk-user-id" placeholder="用于创建文档的操作者身份">
+                        <small class="hint">💡 <strong>重要：这里需要填写 unionId，不是 userId！</strong></small>
+                    </div>
+
+                    <!-- 获取 unionId 工具 -->
+                    <div class="unionid-tool">
+                        <div class="tool-header" onclick="toggleUnionIdTool()">
+                            <span>🔧 点击展开：自动获取 unionId</span>
+                            <span id="unionid-toggle-icon">▼</span>
+                        </div>
+                        <div id="unionid-tool-content" class="tool-content" style="display: none;">
+                            <div class="permission-notice">
+                                <strong>所需权限（在钉钉开放平台开通）：</strong>
+                                <ul>
+                                    <li>通讯录只读权限 <code>Contact.User.Read</code></li>
+                                    <li>通过手机号获取用户信息 <code>qyapi_get_member_by_mobile</code></li>
+                                    <li>成员信息读权限 <code>qyapi_get_member</code></li>
+                                </ul>
+                            </div>
+                            <div class="form-group">
+                                <label>查询方式</label>
+                                <select id="unionid-search-type">
+                                    <option value="userid">通过 userId</option>
+                                    <option value="mobile">通过手机号</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="unionid-search-value">查询值</label>
+                                <input type="text" id="unionid-search-value" placeholder="输入 userId 或手机号">
+                            </div>
+                            <button class="btn btn-secondary" onclick="getUnionId()">获取 unionId</button>
+                            <div id="unionid-result" class="result-box" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <div class="hint-box">
+                        <strong>📋 需要开通的权限：</strong>
+                        <ul>
+                            <li>知识库文档写权限</li>
+                            <li>企业存储文件写权限</li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-primary" onclick="testDingtalkAuth()">保存配置</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 迁移区域 -->
+        <section id="migration-section" class="card">
+            <h2>🚀 开始迁移</h2>
+            
+            <!-- 选项卡 -->
+            <div class="tabs">
+                <button class="tab-btn active" onclick="showTab('single')">单个文档</button>
+                <button class="tab-btn" onclick="showTab('batch')">批量迁移</button>
+            </div>
+
+            <!-- 单个文档迁移 -->
+            <div id="single-tab" class="tab-content active">
+                <div class="form-group">
+                    <label for="feishu-doc-url">飞书文档 URL</label>
+                    <input type="url" id="feishu-doc-url" placeholder="https://your-company.feishu.cn/docx/xxxxx">
+                    <small class="hint">💡 打开飞书文档 → 复制浏览器地址栏 URL</small>
+                </div>
+                <div class="form-group">
+                    <label for="dingtalk-workspace-id-single">目标钉钉知识库 ID</label>
+                    <input type="text" id="dingtalk-workspace-id-single" placeholder="从钉钉知识库URL获取">
+                    <small class="hint">💡 打开钉钉知识库 → 查看浏览器URL：<br>https://alidocs.dingtalk.com/i/nodes/<strong>知识库ID</strong>/... 中间的部分</small>
+                </div>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label style="font-weight: bold;">📦 高级选项（可选）</label>
+                </div>
+                <div class="form-group">
+                    <label for="dingtalk-parent-node-id">父节点 ID（文件夹 ID）</label>
+                    <input type="text" id="dingtalk-parent-node-id" placeholder="留空则在根目录创建">
+                    <small class="hint">💡 打开钉钉知识库中的文件夹 → 查看URL末尾的 nodeId</small>
+                </div>
+                <div class="form-group">
+                    <label for="dingtalk-template-id">模板 ID</label>
+                    <input type="text" id="dingtalk-template-id" placeholder="留空则不使用模板">
+                    <small class="hint">💡 钉钉知识库 → 模板 → 复制模板ID（可选）</small>
+                </div>
+                <div class="form-group">
+                    <label for="dingtalk-template-type">模板类型</label>
+                    <select id="dingtalk-template-type">
+                        <option value="">不使用模板</option>
+                        <option value="official_template">官方模板</option>
+                        <option value="team_template">团队模板</option>
+                        <option value="user_template">个人模板</option>
+                    </select>
+                </div>
+                <button class="btn btn-success btn-large" onclick="migrateSingle()">开始迁移</button>
+            </div>
+
+            <!-- 批量迁移 -->
+            <div id="batch-tab" class="tab-content">
+                <div class="form-group">
+                    <label for="feishu-wiki-id">飞书知识库 ID</label>
+                    <input type="text" id="feishu-wiki-id" placeholder="从飞书知识库URL获取">
+                    <small class="hint">💡 打开飞书知识库 → 查看URL：<br>https://your-company.feishu.cn/wiki/<strong>知识库ID</strong>?... 中间的部分</small>
+                </div>
+                <div class="form-group">
+                    <label for="dingtalk-workspace-id-batch">目标钉钉知识库 ID</label>
+                    <input type="text" id="dingtalk-workspace-id-batch" placeholder="从钉钉知识库URL获取">
+                    <small class="hint">💡 打开钉钉知识库 → 查看URL：<br>https://alidocs.dingtalk.com/i/nodes/<strong>知识库ID</strong>/... 中间的部分</small>
+                </div>
+                <div class="form-group">
+                    <label for="max-depth">最大迁移深度</label>
+                    <select id="max-depth">
+                        <option value="1">仅一级文档</option>
+                        <option value="3" selected>三级以内</option>
+                        <option value="99">所有文档</option>
+                    </select>
+                    <small class="hint">💡 控制迁移子文档的层级深度</small>
+                </div>
+                <button class="btn btn-success btn-large" onclick="migrateBatch()">开始批量迁移</button>
+            </div>
+        </section>
+
+        <!-- 进度区域 -->
+        <section id="progress-section" class="card" style="display: none;">
+            <h2>📊 迁移进度</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-info">
+                <span id="progress-text">准备中...</span>
+                <span id="progress-percent">0%</span>
+            </div>
+            <div class="progress-details">
+                <span>成功：<strong id="success-count">0</strong></span>
+                <span>失败：<strong id="failed-count">0</strong></span>
+                <span>总计：<strong id="total-count">0</strong></span>
+            </div>
+        </section>
+
+        <!-- 结果区域 -->
+        <section id="results-section" class="card" style="display: none;">
+            <h2>✅ 迁移结果</h2>
+            <div id="results-content"></div>
+        </section>
+
+        <!-- 页脚 -->
+        <footer>
+            <p>纯本地执行 · 数据安全 · 无需上传云端</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
