@@ -243,6 +243,48 @@ def migrate_batch():
         }), 500
 
 
+@app.route('/api/dingtalk/workspaces', methods=['POST'])
+def get_dingtalk_workspaces():
+    """
+    获取钉钉知识库列表
+
+    用于前端下拉选择目标知识库
+    """
+    data = request.get_json() or {}
+    client_id = data.get('client_id')
+    client_secret = data.get('client_secret')
+    corp_id = data.get('corp_id')
+    user_id = data.get('user_id', 'system')
+
+    if not all([client_id, client_secret, corp_id]):
+        return jsonify({
+            'success': False,
+            'error': '缺少钉钉凭证（client_id, client_secret, corp_id）'
+        }), 400
+
+    try:
+        from dingtalk_importer import DingtalkImporter
+        importer = DingtalkImporter(
+            client_id=client_id,
+            client_secret=client_secret,
+            corp_id=corp_id,
+            user_id=user_id or 'system'
+        )
+
+        workspaces = importer.get_workspaces()
+
+        return jsonify({
+            'success': True,
+            'workspaces': workspaces
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'获取知识库列表失败：{str(e)}'
+        }), 500
+
+
 @app.route('/api/status')
 def get_status():
     """获取迁移进度"""

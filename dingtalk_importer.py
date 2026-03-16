@@ -12,8 +12,10 @@ from typing import Optional, Dict, Any
 
 try:
     from alibabacloud_dingtalk.doc_1_0.client import Client as DingtalkDocClient
+    from alibabacloud_dingtalk.wiki_2_0.client import Client as DingtalkWikiClient
     from alibabacloud_tea_openapi import models as open_api_models
     from alibabacloud_dingtalk.doc_1_0 import models as dingtalkdoc_models
+    from alibabacloud_dingtalk.wiki_2_0 import models as dingtalkwiki_models
     from alibabacloud_tea_util import models as util_models
     from alibabacloud_tea_util.client import Client as UtilClient
     SDK_AVAILABLE = True
@@ -457,6 +459,137 @@ class DingtalkImporter:
         except requests.RequestException as e:
             print(f"[ERROR] 网络请求失败: {str(e)}")
             return False
+
+    def get_workspaces(self) -> list:
+        """
+        获取钉钉知识库列表
+
+        API: wiki_2_0 ListWorkspaces
+        文档: https://open.dingtalk.com/document/orgapp/obtain-the-knowledge-base-list
+
+        Returns:
+            知识库列表 [{'id': ..., 'name': ...}, ...]
+        """
+        try:
+            print(f"\n[DEBUG] ========== 获取钉钉知识库列表 ==========")
+
+            # 获取 access_token
+            token = self.get_access_token()
+            if not token:
+                print(f"[ERROR] 获取 access_token 失败")
+                return []
+
+            # 优先尝试使用 SDK (wiki_2_0 模块)
+            if SDK_AVAILABLE:
+                print(f"[DEBUG] 尝试使用 wiki_2_0 SDK...")
+                result = self._get_workspaces_with_sdk()
+                if result:
+                    return result
+                print(f"[DEBUG] wiki_2_0 SDK 获取失败，尝试 HTTP API...")
+
+            # 回退到 HTTP API
+            url = f"{self.base_url}/v1.0/doc/workspaces"
+            headers = {
+                "Content-Type": "application/json",
+                "x-acs-dingtalk-access-token": token
+            }
+            params = {
+                "operatorId": self.user_id or "system",
+                "pageSize": 100
+            }
+
+            print(f"[DEBUG] 请求 URL: {url}")
+            print(f"[DEBUG] 查询参数: {params}")
+
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            print(f"[DEBUG] 响应状态码: {response.status_code}")
+            print(f"[DEBUG] 响应内容: {response.text[:500]}")
+
+            if response.status_code != 200:
+                print(f"[ERROR] 获取知识库列表失败: HTTP {response.status_code}")
+                return []
+
+            data = response.json()
+
+            # 解析知识库列表
+            workspaces = []
+            items = data.get("workspaces", []) or data.get("items", [])
+
+            for item in items:
+                workspaces.append({
+                    "id": item.get("id") or item.get("workspaceId"),
+                    "name": item.get("name") or item.get("workspaceName"),
+                    "description": item.get("description", ""),
+                    "createTime": item.get("createTime", "")
+                })
+
+            print(f"[DEBUG] 获取到 {len(workspaces)} 个知识库")
+            print(f"[DEBUG] ========== 知识库列表获取完成 ==========\n")
+
+            return workspaces
+
+        except Exception as e:
+            print(f"[ERROR] 获取知识库列表异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _get_workspaces_with_sdk(self) -> list:
+        """
+        使用 wiki_2_0 SDK 获取知识库列表
+
+        参考: https://open.dingtalk.com/document/orgapp/obtain-the-knowledge-base-list
+        """
+        try:
+            config = open_api_models.Config()
+            config.protocol = 'https'
+            config.region_id = 'central'
+            client = DingtalkWikiClient(config)
+
+            headers = dingtalkwiki_models.ListWorkspacesHeaders()
+            headers.x_acs_dingtalk_access_token = self.access_token
+
+            request = dingtalkwiki_models.ListWorkspacesRequest(
+                max_results=100,
+                with_permission_role=False,
+                operator_id=self.user_id or 'system'
+            )
+
+            print(f"[DEBUG] SDK 请求参数: max_results=100, operator_id={self.user_id}")
+
+            response = client.list_workspaces_with_options(
+                request,
+                headers,
+                util_models.RuntimeOptions()
+            )
+
+            if not response or not response.body:
+                print(f"[DEBUG] SDK 响应为空")
+                return []
+
+            print(f"[DEBUG] SDK 响应成功")
+
+            # 解析响应
+            workspaces = []
+            items = response.body.workspaces or []
+
+            for item in items:
+                workspaces.append({
+                    "id": item.workspace_id,
+                    "name": item.name,
+                    "description": getattr(item, 'description', '') or '',
+                    "createTime": getattr(item, 'create_time', '') or ''
+                })
+
+            print(f"[DEBUG] SDK 获取到 {len(workspaces)} 个知识库")
+            return workspaces
+
+        except Exception as err:
+            if hasattr(err, 'code') and hasattr(err, 'message'):
+                print(f"[DEBUG] SDK 错误: code={err.code}, message={err.message}")
+            else:
+                print(f"[DEBUG] SDK 异常: {str(err)}")
+            return []
 
     def create_folder(self, workspace_id: str, folder_name: str) -> Optional[str]:
         """

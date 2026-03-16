@@ -20,7 +20,7 @@ function loadSavedConfig() {
     const savedFeishu = localStorage.getItem('feishu_config');
     const savedDingtalk = localStorage.getItem('dingtalk_config');
     const savedUserId = localStorage.getItem('dingtalk_user_id');
-    
+
     if (savedFeishu) {
         const config = JSON.parse(savedFeishu);
         document.getElementById('feishu-app-id').value = config.app_id || '';
@@ -30,7 +30,7 @@ function loadSavedConfig() {
             updateConfigStatus('feishu', true);
         }
     }
-    
+
     if (savedDingtalk) {
         const config = JSON.parse(savedDingtalk);
         document.getElementById('dingtalk-client-id').value = config.client_id || '';
@@ -39,9 +39,12 @@ function loadSavedConfig() {
         if (config.configured) {
             dingtalkConfigured = true;
             updateConfigStatus('dingtalk', true);
+            // 自动加载知识库列表
+            loadDingtalkWorkspaces('dingtalk-workspace-id-single');
+            loadDingtalkWorkspaces('dingtalk-workspace-id-batch');
         }
     }
-    
+
     if (savedUserId) {
         document.getElementById('dingtalk-user-id').value = savedUserId;
     }
@@ -126,22 +129,22 @@ function testDingtalkAuth() {
     const clientSecret = document.getElementById('dingtalk-client-secret').value;
     const corpId = document.getElementById('dingtalk-corp-id').value;
     const userId = document.getElementById('dingtalk-user-id').value;
-    
+
     if (!clientId || !clientSecret || !corpId) {
         alert('请输入完整的钉钉凭证');
         return;
     }
-    
+
     if (!userId) {
         alert('请输入钉钉用户 ID');
         return;
     }
-    
+
     fetch(API_BASE + '/api/auth/dingtalk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            client_id: clientId, 
+        body: JSON.stringify({
+            client_id: clientId,
             client_secret: clientSecret,
             corp_id: corpId,
             user_id: userId
@@ -155,6 +158,10 @@ function testDingtalkAuth() {
             saveConfig('dingtalk', { client_id: clientId, client_secret: clientSecret, corp_id: corpId });
             saveConfig('userId', { user_id: userId });
             alert('✅ 钉钉配置已保存！');
+
+            // 自动加载知识库列表
+            loadDingtalkWorkspaces('dingtalk-workspace-id-single');
+            loadDingtalkWorkspaces('dingtalk-workspace-id-batch');
         } else {
             alert('❌ 钉钉配置失败：' + data.error);
         }
@@ -166,7 +173,7 @@ function testDingtalkAuth() {
 
 function migrateSingle() {
     const feishuUrl = document.getElementById('feishu-doc-url').value;
-    const workspaceId = document.getElementById('dingtalk-workspace-id-single').value;
+    const workspaceId = getWorkspaceId('single');
     
     // 获取高级选项
     const parentNodeId = document.getElementById('dingtalk-parent-node-id').value || '';
@@ -254,7 +261,7 @@ function migrateSingle() {
 
 function migrateBatch() {
     const wikiId = document.getElementById('feishu-wiki-id').value;
-    const workspaceId = document.getElementById('dingtalk-workspace-id-batch').value;
+    const workspaceId = getWorkspaceId('batch');
     const maxDepth = document.getElementById('max-depth').value;
     
     if (!wikiId) {
@@ -470,4 +477,104 @@ function copyUnionId(unionId) {
         document.body.removeChild(input);
         alert('unionId 已复制到剪贴板！');
     });
+}
+
+// ========== 钉钉知识库列表 ==========
+
+function toggleWorkspaceInputMode(mode) {
+    /**
+     * 切换知识库输入模式（下拉选择 / 手动输入）
+     * @param {string} mode - 'single' 或 'batch'
+     */
+    const selectWrapper = document.getElementById(`workspace-select-wrapper-${mode}`);
+    const inputWrapper = document.getElementById(`workspace-input-wrapper-${mode}`);
+    const selectedRadio = document.querySelector(`input[name="workspace-input-mode-${mode}"]:checked`);
+
+    if (selectedRadio.value === 'select') {
+        selectWrapper.style.display = 'flex';
+        inputWrapper.style.display = 'none';
+    } else {
+        selectWrapper.style.display = 'none';
+        inputWrapper.style.display = 'block';
+    }
+}
+
+function getWorkspaceId(mode) {
+    /**
+     * 获取知识库 ID（根据当前选择的输入模式）
+     * @param {string} mode - 'single' 或 'batch'
+     * @returns {string} 知识库 ID
+     */
+    const selectedRadio = document.querySelector(`input[name="workspace-input-mode-${mode}"]:checked`);
+
+    if (selectedRadio.value === 'select') {
+        return document.getElementById(`dingtalk-workspace-id-${mode}`).value;
+    } else {
+        return document.getElementById(`dingtalk-workspace-id-${mode}-manual`).value;
+    }
+}
+
+async function loadDingtalkWorkspaces(targetSelectId) {
+    /**
+     * 加载钉钉知识库列表到指定的下拉框
+     * @param {string} targetSelectId - 目标 select 元素的 ID
+     */
+    const selectElement = document.getElementById(targetSelectId);
+    if (!selectElement) {
+        console.error('找不到目标 select 元素:', targetSelectId);
+        return;
+    }
+
+    // 显示加载状态
+    selectElement.innerHTML = '<option value="">加载中...</option>';
+    selectElement.disabled = true;
+
+    // 获取钉钉凭证
+    const savedDingtalk = localStorage.getItem('dingtalk_config');
+    const savedUserId = localStorage.getItem('dingtalk_user_id');
+
+    if (!savedDingtalk) {
+        selectElement.innerHTML = '<option value="">请先配置钉钉凭证</option>';
+        selectElement.disabled = false;
+        return;
+    }
+
+    const dingtalkConfig = JSON.parse(savedDingtalk);
+
+    try {
+        const response = await fetch(API_BASE + '/api/dingtalk/workspaces', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                client_id: dingtalkConfig.client_id,
+                client_secret: dingtalkConfig.client_secret,
+                corp_id: dingtalkConfig.corp_id,
+                user_id: savedUserId || 'system'
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.workspaces && data.workspaces.length > 0) {
+            let optionsHtml = '<option value="">-- 请选择知识库 --</option>';
+            data.workspaces.forEach(workspace => {
+                optionsHtml += `<option value="${workspace.id}">${workspace.name}</option>`;
+            });
+            selectElement.innerHTML = optionsHtml;
+            selectElement.disabled = false;
+        } else {
+            // 显示错误信息，提示用户切换到手动输入
+            const errorMsg = data.error || '暂无知识库';
+            selectElement.innerHTML = `<option value="">${errorMsg}（请切换到手动输入）</option>`;
+            selectElement.disabled = false;
+        }
+    } catch (error) {
+        selectElement.innerHTML = '<option value="">加载失败，请切换到手动输入</option>';
+        selectElement.disabled = false;
+    }
+}
+
+// 刷新知识库列表按钮
+function refreshWorkspaces(targetSelectId) {
+    loadDingtalkWorkspaces(targetSelectId);
 }
